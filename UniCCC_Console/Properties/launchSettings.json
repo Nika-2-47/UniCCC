@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "UniCCC_Console": {
+      "commandName": "Project",
+      "commandLineArgs": "U+D83D,U+DE00"
+    }
+  }
+}
