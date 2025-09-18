@@ -1,55 +1,46 @@
-﻿using System.Text;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging; // この行を追加
 
-// --- ヘルプ ---
-if (args.Length == 0 || args.Contains("-h") || args.Contains("--help"))
+
+var services = new ServiceCollection();
+
+#region logging settings
+services.AddLogging(builder =>
 {
-    Console.WriteLine("""
-    UniCCC - Unicode → UTF-16BE converter
-    Usage:
-      dotnet run -- [options] <tokens...>
+    builder.ClearProviders();
+    builder.SetMinimumLevel(LogLevel.Information);
+    builder.AddConsole();
+    //builder.AddNLog();   // ← ここだけ差し替え
 
-    Tokens:
-      U+XXXX   (例: U+0041)
-      0xXXXX   (例: 0x1F600)
-      &#xHH;   (例: &#x1F600;)
-      &#DDDD;  (例: &#128512;)
-      65       (10進数)
-      1F600    (裸の16進数)
+    // 他のコードはそのまま
+});
 
-    Options:
-      -o <file>        UTF-16BE バイナリをファイルに出力
-      --hex-only | -H  標準出力に16進バイト列だけ表示
-      -h, --help       このヘルプを表示
-    """);
-    // return;
-}
+var provider = services.BuildServiceProvider();
+var logger = provider.GetRequiredService<ILogger<Program>>();
 
-// --- オプション解析 ---
-string? outFile = null;
-bool hexOnly = false;
-List<string> tokens = new();
+//logger.LogInformation("Hello with NLog backend!");
+//logger.LogWarning("This is a warning message from NLog!");
 
-for (int i = 0; i < args.Length; i++)
-{
-    switch (args[i])
-    {
-        case "-o":
-            if (i + 1 < args.Length) outFile = args[++i];
-            else Console.Error.WriteLine("Error: -o requires a filename.");
-            break;
-        case "--hex-only":
-        case "-H":
-            hexOnly = true;
-            break;
-        default:
-            tokens.Add(args[i]);
-            break;
-    }
-}
+#endregion
+
+string? outFile;
+bool hexOnly;
+List<string> tokens;
+List<int> cps;
+List<string> errors;
+
+analysArgs(args);
+
+
+
+analysOptions(args, out outFile, out hexOnly, out tokens);
+
+
 
 // --- トークン → コードポイント ---
-(List<int> cps, List<string> errors) = ParseTokensToCodePoints(tokens);
+( cps, errors) = ParseTokensToCodePoints(tokens);
+
 
 if (errors.Count > 0)
 {
@@ -78,7 +69,7 @@ foreach (var cp in cps)
     {
         int v = cp - 0x10000;
         int high = 0xD800 | ((v >> 10) & 0x3FF);
-        int low  = 0xDC00 | (v & 0x3FF);
+        int low = 0xDC00 | (v & 0x3FF);
         bytes.Add((byte)(high >> 8));
         bytes.Add((byte)(high & 0xFF));
         bytes.Add((byte)(low >> 8));
@@ -107,9 +98,12 @@ else
     Console.WriteLine("UTF-16BE:    " + hex);
 }
 
+
+provider.Dispose();
+
 return 0;
 
-// --- 関数: トークンをコードポイントに変換 ---
+#region  関数: トークンをコードポイントに変換 
 static (List<int>, List<string>) ParseTokensToCodePoints(IEnumerable<string> inputs)
 {
     var cps = new List<int>();
@@ -144,3 +138,66 @@ static (List<int>, List<string>) ParseTokensToCodePoints(IEnumerable<string> inp
 
     return (cps, errors);
 }
+
+#endregion
+
+#region 関数: 文字列をコードポイントに変換
+//入力された文字のコードポイントを取得する
+static int GetCodePoint(char c)
+{
+    return char.ConvertToUtf32(c.ToString(), 0);
+}
+
+static void analysArgs(string[] args)
+{
+    // --- ヘルプ ---
+    if (args.Length == 0 || args.Contains("-h") || args.Contains("--help"))
+    {
+        Console.WriteLine("""
+    UniCCC - Unicode → UTF-16BE converter
+    Usage:
+      dotnet run -- [options] <tokens...>
+
+    Tokens:
+      U+XXXX   (例: U+0041)
+      0xXXXX   (例: 0x1F600)
+      &#xHH;   (例: &#x1F600;)
+      &#DDDD;  (例: &#128512;)
+      65       (10進数)
+      1F600    (裸の16進数)
+
+    Options:
+      -o <file>        UTF-16BE バイナリをファイルに出力
+      --hex-only | -H  標準出力に16進バイト列だけ表示
+      -h, --help       このヘルプを表示
+    """);
+        // return;
+    }
+}
+
+static void analysOptions(string[] args, out string? outFile, out bool hexOnly, out List<string> tokens)
+{
+
+    // --- オプション解析 ---
+    outFile = null;
+    hexOnly = false;
+    tokens = new();
+    for (int i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-o":
+                if (i + 1 < args.Length) outFile = args[++i];
+                else Console.Error.WriteLine("Error: -o requires a filename.");
+                break;
+            case "--hex-only":
+            case "-H":
+                hexOnly = true;
+                break;
+            default:
+                tokens.Add(args[i]);
+                break;
+        }
+    }
+}
+#endregion
